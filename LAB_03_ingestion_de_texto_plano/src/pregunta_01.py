@@ -1,3 +1,9 @@
+import re
+from pathlib import Path
+
+import pandas as pd
+
+
 def pregunta_01():
     """
     El archivo `data/clusters_report.txt` es un reporte de clústeres de
@@ -25,5 +31,44 @@ def pregunta_01():
         1        2                         102                          15.4
         ...
     """
+    file_path = Path("data/clusters_report.txt")
+    if not file_path.exists():
+        file_path = Path(__file__).resolve().parent.parent / "data" / "clusters_report.txt"
 
-    raise NotImplementedError
+    clusters = []
+    pattern = re.compile(r"^\s*(\d+)\s+(\d+)\s+([\d,]+)\s*%\s+(.*)$")
+    current = None
+
+    with open(file_path, "r", encoding="utf-8") as f:
+        for line in f:
+            match = pattern.match(line)
+            if match:
+                if current:
+                    clusters.append(current)
+                current = {
+                    "cluster": int(match.group(1)),
+                    "cantidad_de_palabras_clave": int(match.group(2)),
+                    "porcentaje_de_palabras_clave": float(match.group(3).replace(",", ".")),
+                    "words": [match.group(4).strip()],
+                }
+            elif current and line.strip():
+                current["words"].append(line.strip())
+
+    if current:
+        clusters.append(current)
+
+    records = []
+    for c in clusters:
+        full_text = " ".join(c["words"])
+        cleaned = " ".join(full_text.split())
+        if cleaned.endswith("."):
+            cleaned = cleaned[:-1].strip()
+        records.append({
+            "cluster": c["cluster"],
+            "cantidad_de_palabras_clave": c["cantidad_de_palabras_clave"],
+            "porcentaje_de_palabras_clave": c["porcentaje_de_palabras_clave"],
+            "principales_palabras_clave": cleaned,
+        })
+
+    return pd.DataFrame(records)
+

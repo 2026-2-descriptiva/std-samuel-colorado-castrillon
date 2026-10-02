@@ -1,3 +1,7 @@
+import gzip
+from pathlib import Path
+
+
 def pregunta_10():
     """
     Para cada registro del archivo, en el mismo orden en que aparecen,
@@ -10,5 +14,19 @@ def pregunta_10():
 
         [("E", 3, 5), ("A", 3, 4), ("B", 4, 4), ...]
     """
+    file_path = Path("data/data.csv.gz")
+    if not file_path.exists():
+        file_path = Path(__file__).resolve().parent.parent / "data" / "data.csv.gz"
 
-    raise NotImplementedError
+    result = []
+    with gzip.open(file_path, "rt", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                parts = line.split("\t")
+                letter = parts[0]
+                num_codes = len(parts[3].split(","))
+                num_metrics = len(parts[4].split(","))
+                result.append((letter, num_codes, num_metrics))
+
+    return result

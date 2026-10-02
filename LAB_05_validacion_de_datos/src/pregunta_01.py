@@ -1,3 +1,10 @@
+import json
+import re
+from pathlib import Path
+
+import pandas as pd
+
+
 def main():
     """
     Antes de limpiar o analizar un conjunto de datos, un analista debe
@@ -47,5 +54,96 @@ def main():
           "country_values": [" Colombia ", "CO", ...]
         }
     """
+    file_path = Path("data/ventas.csv.gz")
+    if not file_path.exists():
+        file_path = Path(__file__).resolve().parent.parent / "data" / "ventas.csv.gz"
+        submission_dir = Path(__file__).resolve().parent.parent / "submission"
+    else:
+        submission_dir = Path("submission")
 
-    raise NotImplementedError
+    submission_dir.mkdir(parents=True, exist_ok=True)
+
+    required_columns = [
+        "supplier_id",
+        "supplier",
+        "country",
+        "city",
+        "purchase_date",
+        "amount",
+        "discount",
+        "weight",
+        "units",
+        "unit_price",
+        "contact_email",
+    ]
+
+    df = pd.read_csv(file_path, keep_default_na=False)
+    df.columns = [
+        c.lstrip("\ufeff").strip().lower().replace(" ", "_")
+        for c in df.columns
+    ]
+
+    row_count = int(len(df))
+    column_count = int(len(df.columns))
+
+    missing_required = sorted([c for c in required_columns if c not in df.columns])
+    unexpected = sorted([c for c in df.columns if c not in required_columns])
+
+    duplicate_row_count = int(df.duplicated().sum())
+    if "supplier_id" in df.columns:
+        duplicate_supplier_id_row_count = int(df["supplier_id"].duplicated(keep=False).sum())
+    else:
+        duplicate_supplier_id_row_count = 0
+
+    missing_value_count_by_column = {}
+    for col in df.columns:
+        is_missing = df[col].astype(str).str.strip().isin(["", "N/A"])
+        missing_value_count_by_column[col] = int(is_missing.sum())
+
+    email_regex = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    invalid_email_count = 0
+    if "contact_email" in df.columns:
+        for val in df["contact_email"]:
+            if not email_regex.match(str(val).strip()):
+                invalid_email_count += 1
+
+    invalid_unit_count = 0
+    if "units" in df.columns:
+        for val in df["units"]:
+            val_str = str(val).strip()
+            if val_str in ["", "N/A"]:
+                continue
+            try:
+                num = float(val_str)
+                if not (num.is_integer() and num > 0):
+                    invalid_unit_count += 1
+            except ValueError:
+                invalid_unit_count += 1
+
+    country_values = []
+    if "country" in df.columns:
+        country_values = sorted(df["country"].unique().tolist())
+
+    report = {
+        "row_count": row_count,
+        "column_count": column_count,
+        "missing_required_columns": missing_required,
+        "unexpected_columns": unexpected,
+        "duplicate_row_count": duplicate_row_count,
+        "duplicate_supplier_id_row_count": duplicate_supplier_id_row_count,
+        "missing_value_count_by_column": missing_value_count_by_column,
+        "invalid_email_count": invalid_email_count,
+        "invalid_unit_count": invalid_unit_count,
+        "country_values": country_values,
+    }
+
+    report_path = submission_dir / "data_quality_report.json"
+    with open(report_path, "w", encoding="utf-8") as f:
+        json.dump(report, f, indent=4)
+
+    return report
+
+
+pregunta_01 = main
+
+

@@ -1,3 +1,8 @@
+from pathlib import Path
+
+import pandas as pd
+
+
 def pregunta_01():
     """
     El archivo `data/solicitudes_de_credito.csv.gz` contiene las solicitudes de
@@ -33,5 +38,64 @@ def pregunta_01():
         femenino;comercio;almacen de ropa en;los cerros el vergel;2;...
         ...
     """
+    file_path = Path("data/solicitudes_de_credito.csv.gz")
+    if not file_path.exists():
+        file_path = Path(__file__).resolve().parent.parent / "data" / "solicitudes_de_credito.csv.gz"
+        submission_dir = Path(__file__).resolve().parent.parent / "submission"
+    else:
+        submission_dir = Path("submission")
 
-    raise NotImplementedError
+    submission_dir.mkdir(parents=True, exist_ok=True)
+
+    df = pd.read_csv(file_path, sep=";", index_col=0, encoding="utf-8")
+    df.columns = [
+        "sexo",
+        "tipo_de_emprendimiento",
+        "idea_negocio",
+        "barrio",
+        "estrato",
+        "comuna_ciudadano",
+        "fecha_de_beneficio",
+        "monto_del_credito",
+        "línea_credito",
+    ]
+
+    cols_no_comuna = [c for c in df.columns if c != "comuna_ciudadano"]
+    df = df.dropna(subset=cols_no_comuna).copy()
+
+    text_cols = ["sexo", "tipo_de_emprendimiento", "idea_negocio", "barrio", "línea_credito"]
+    for col in text_cols:
+        df[col] = (
+            df[col]
+            .astype(str)
+            .str.lower()
+            .str.replace("-", " ", regex=False)
+            .str.replace("_", " ", regex=False)
+            .apply(lambda s: " ".join(s.split()))
+        )
+
+    df["estrato"] = df["estrato"].astype(int)
+
+    def clean_date(val):
+        s = str(val).strip().replace("-", "/")
+        parts = s.split("/")
+        if len(parts) == 3:
+            if len(parts[0]) == 4:
+                year, month, day = parts[0], parts[1], parts[2]
+            else:
+                day, month, year = parts[0], parts[1], parts[2]
+            return f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
+        return val
+
+    df["fecha_de_beneficio"] = df["fecha_de_beneficio"].apply(clean_date)
+
+    def clean_monto(val):
+        s = str(val).replace("$", "").replace(",", "").strip()
+        return int(float(s))
+
+    df["monto_del_credito"] = df["monto_del_credito"].apply(clean_monto)
+
+    df = df.drop_duplicates()
+
+    df.to_csv(submission_dir / "solicitudes_de_credito.csv", sep=";", index=False)
+

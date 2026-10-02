@@ -1,3 +1,10 @@
+import json
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+
 def pregunta_01():
     """
     Una aseguradora quiere publicar datos de sus afiliados para que un grupo
@@ -79,5 +86,101 @@ def pregunta_01():
           ...
         }
     """
+    file_path = Path("data/insurance.csv.gz")
+    if not file_path.exists():
+        file_path = Path(__file__).resolve().parent.parent / "data" / "insurance.csv.gz"
+        submission_dir = Path(__file__).resolve().parent.parent / "submission"
+    else:
+        submission_dir = Path("submission")
 
-    raise NotImplementedError
+    submission_dir.mkdir(parents=True, exist_ok=True)
+
+    df = pd.read_csv(file_path)
+
+    orig_qis = ["age", "sex", "bmi", "children", "region"]
+    orig_sizes = df.groupby(orig_qis)["age"].transform("size")
+    original_k = int(orig_sizes.min())
+    original_unique_records = int((orig_sizes == 1).sum())
+
+    age_bins = [18, 30, 40, 50, 65]
+    age_labels = ["18-29", "30-39", "40-49", "50-64"]
+    df["age_group"] = pd.cut(df["age"], bins=age_bins, labels=age_labels, right=False).astype(str)
+
+    bmi_bins = [-np.inf, 18.5, 25.0, 30.0, np.inf]
+    bmi_labels = ["bajo peso", "normal", "sobrepeso", "obesidad"]
+    df["bmi_group"] = pd.cut(df["bmi"], bins=bmi_bins, labels=bmi_labels, right=False).astype(str)
+
+    def get_children_group(c):
+        if c == 0:
+            return "0"
+        elif c in [1, 2]:
+            return "1-2"
+        else:
+            return "3+"
+
+    df["children_group"] = df["children"].apply(get_children_group)
+
+    schemes_def = {
+        "with_children": ["age_group", "sex", "bmi_group", "children_group", "region"],
+        "without_children": ["age_group", "sex", "bmi_group", "region"],
+    }
+
+    schemes_report = {}
+    published_dfs = {}
+
+    for name, qis in schemes_def.items():
+        sizes = df.groupby(qis)["age"].transform("size")
+        eq_classes = int(df.groupby(qis).ngroups)
+        k_before = int(sizes.min())
+        suppressed = int((sizes < 5).sum())
+        published_mask = sizes >= 5
+        published_records = int(published_mask.sum())
+
+        pub_df = df[published_mask]
+        published_dfs[name] = pub_df
+        pub_groups = pub_df.groupby(qis)
+        published_classes = int(pub_groups.ngroups)
+
+        div = pub_groups["smoker"].nunique()
+        no_div_classes = int((div == 1).sum())
+        no_div_records = int(pub_groups.filter(lambda g: g["smoker"].nunique() == 1).shape[0])
+
+        schemes_report[name] = {
+            "quasi_identifiers": qis,
+            "equivalence_classes": eq_classes,
+            "k_before_suppression": k_before,
+            "suppressed_records": suppressed,
+            "published_records": published_records,
+            "published_classes": published_classes,
+            "classes_without_smoker_diversity": no_div_classes,
+            "records_without_smoker_diversity": no_div_records,
+        }
+
+    # Selected scheme: the one that suppresses fewer records
+    selected_scheme = min(schemes_report, key=lambda s: schemes_report[s]["suppressed_records"])
+    selected_pub_df = published_dfs[selected_scheme]
+
+    mean_charges_orig = float(df["charges"].mean())
+    mean_charges_pub = float(selected_pub_df["charges"].mean())
+    smoker_rate_orig = float((df["smoker"] == "yes").mean())
+    smoker_rate_pub = float((selected_pub_df["smoker"] == "yes").mean())
+
+    report = {
+        "original_k": original_k,
+        "original_unique_records": original_unique_records,
+        "schemes": schemes_report,
+        "selected_scheme": selected_scheme,
+        "mean_charges_original": mean_charges_orig,
+        "mean_charges_published": mean_charges_pub,
+        "smoker_rate_original": smoker_rate_orig,
+        "smoker_rate_published": smoker_rate_pub,
+    }
+
+    with open(submission_dir / "privacy_report.json", "w", encoding="utf-8") as f:
+        json.dump(report, f, indent=4)
+
+    pub_cols = schemes_def[selected_scheme] + ["smoker", "charges"]
+    selected_pub_df[pub_cols].to_csv(submission_dir / "insurance_published.csv", index=False)
+
+    return report
+

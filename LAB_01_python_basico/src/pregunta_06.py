@@ -1,3 +1,8 @@
+from collections import defaultdict
+import gzip
+from pathlib import Path
+
+
 def pregunta_06():
     """
     La quinta columna (`metrics`) contiene pares `clave:valor` separados por
@@ -12,5 +17,19 @@ def pregunta_06():
 
         [("aaa", 1, 9), ("bbb", 1, 9), ...]
     """
+    file_path = Path("data/data.csv.gz")
+    if not file_path.exists():
+        file_path = Path(__file__).resolve().parent.parent / "data" / "data.csv.gz"
 
-    raise NotImplementedError
+    metrics = defaultdict(list)
+    with gzip.open(file_path, "rt", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                parts = line.split("\t")
+                pairs = parts[4].split(",")
+                for pair in pairs:
+                    k, v = pair.split(":")
+                    metrics[k].append(int(v))
+
+    return [(k, min(vals), max(vals)) for k, vals in sorted(metrics.items())]
